@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Khata — Monthly Money Ledger</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,500;0,600;1,500&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1b2a3d;
+    --paper:#efe6d3;
+    --paper-line:#d9cbaa;
+    --forest:#2f6e4f;
+    --rust:#a8402f;
+    --gold:#b5904a;
+    --ink-soft:#4a5a6d;
+    --white:#faf6ec;
+    --shadow: 0 18px 40px -20px rgba(27,42,61,0.45);
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:var(--ink);
+    background-image:
+      radial-gradient(circle at 10% 0%, rgba(197,166,107,0.08), transparent 40%),
+      radial-gradient(circle at 90% 100%, rgba(47,110,79,0.10), transparent 45%);
+    font-family:'Inter',sans-serif;
+    color:var(--ink);
+    padding:28px 16px 60px;
+    min-height:100vh;
+  }
+  .wrap{max-width:920px;margin:0 auto;}
+
+  .book-header{
+    display:flex; align-items:baseline; justify-content:space-between; gap:16px;
+    margin-bottom:22px; flex-wrap:wrap;
+  }
+  .book-header h1{
+    font-family:'Fraunces',serif; font-weight:600; font-style:italic;
+    color:var(--white); font-size:2.1rem; margin:0; letter-spacing:0.3px;
+  }
+  .book-header .sub{
+    color:#c7cedb; font-size:0.85rem; letter-spacing:0.03em;
+  }
+  .month-nav{
+    display:flex; align-items:center; gap:10px; color:var(--white);
+    font-family:'JetBrains Mono',monospace; font-size:0.95rem;
+  }
+  .month-nav button{
+    background:none; border:1px solid rgba(250,246,236,0.35); color:var(--white);
+    width:30px; height:30px; border-radius:6px; cursor:pointer; font-size:1rem;
+  }
+  .month-nav button:hover{background:rgba(250,246,236,0.12);}
+
+  .ledger-page{
+    background:var(--paper);
+    border-radius:6px;
+    box-shadow:var(--shadow);
+    padding:0;
+    position:relative;
+    overflow:hidden;
+    border:1px solid rgba(0,0,0,0.06);
+  }
+  .ledger-page::before{
+    content:"";
+    position:absolute; left:56px; top:0; bottom:0; width:1px;
+    background:rgba(168,64,47,0.28);
+  }
+  .ledger-inner{
+    padding:28px 30px 30px 74px;
+    background-image: repeating-linear-gradient(
+      to bottom, transparent, transparent 33px, var(--paper-line) 34px
+    );
+    background-position: 0 84px;
+  }
+
+  .tag{
+    display:inline-block; font-family:'JetBrains Mono',monospace; font-size:0.68rem;
+    text-transform:uppercase; letter-spacing:0.12em; color:var(--ink-soft);
+    background:rgba(255,255,255,0.5); border:1px solid rgba(0,0,0,0.08);
+    padding:3px 8px; border-radius:4px; margin-bottom:10px;
+  }
+
+  .row{display:flex; gap:24px; flex-wrap:wrap;}
+  .col{flex:1; min-width:220px;}
+
+  h2.section-title{
+    font-family:'Fraunces',serif; font-weight:600; font-size:1.15rem; margin:0 0 14px;
+    display:flex; align-items:center; gap:8px;
+  }
+  h2.section-title .num{color:var(--gold); font-family:'JetBrains Mono',monospace; font-size:0.85rem;}
+
+  label{
+    display:block; font-size:0.72rem; text-transform:uppercase; letter-spacing:0.06em;
+    color:var(--ink-soft); margin-bottom:5px; font-weight:600;
+  }
+  input, select{
+    width:100%; padding:9px 10px; border:1px solid rgba(27,42,61,0.2);
+    border-radius:5px; background:var(--white); font-family:'Inter',sans-serif;
+    font-size:0.92rem; color:var(--ink);
+  }
+  input:focus, select:focus{outline:2px solid var(--forest); outline-offset:1px;}
+  .field{margin-bottom:12px;}
+
+  .btn{
+    border:none; border-radius:5px; padding:10px 18px; font-weight:600; font-size:0.88rem;
+    cursor:pointer; font-family:'Inter',sans-serif; transition:transform .08s ease;
+  }
+  .btn:active{transform:scale(0.97);}
+  .btn-forest{background:var(--forest); color:var(--white);}
+  .btn-rust{background:var(--rust); color:var(--white);}
+  .btn-ghost{background:transparent; border:1px solid rgba(27,42,61,0.25); color:var(--ink);}
+  .btn-block{width:100%;}
+
+  hr.divider{border:none; border-top:1px dashed rgba(27,42,61,0.2); margin:26px 0;}
+
+  table{width:100%; border-collapse:collapse; font-size:0.88rem;}
+  th{
+    text-align:left; font-family:'JetBrains Mono',monospace; font-size:0.68rem;
+    text-transform:uppercase; letter-spacing:0.08em; color:var(--ink-soft);
+    padding:6px 8px; border-bottom:2px solid rgba(27,42,61,0.18);
+  }
+  td{padding:8px 8px; border-bottom:1px solid rgba(27,42,61,0.08); vertical-align:middle;}
+  td.amt{font-family:'JetBrains Mono',monospace; text-align:right; font-weight:600;}
+  tr.empty-row td{color:var(--ink-soft); font-style:italic; text-align:center; padding:18px;}
+  .cat-pill{
+    font-size:0.72rem; padding:2px 8px; border-radius:20px; font-weight:600;
+    display:inline-block;
+  }
+  .del-btn{
+    background:none; border:none; color:var(--rust); cursor:pointer; font-size:0.95rem;
+    opacity:0.6;
+  }
+  .del-btn:hover{opacity:1;}
+
+  .stat-grid{display:flex; gap:14px; flex-wrap:wrap; margin-bottom:20px;}
+  .stat-card{
+    flex:1; min-width:150px; background:rgba(255,255,255,0.55);
+    border:1px solid rgba(0,0,0,0.06); border-radius:8px; padding:14px 16px;
+  }
+  .stat-card .lbl{font-size:0.68rem; text-transform:uppercase; letter-spacing:0.08em; color:var(--ink-soft); font-weight:600;}
+  .stat-card .val{font-family:'JetBrains Mono',monospace; font-size:1.5rem; font-weight:700; margin-top:4px;}
+  .stat-card.positive .val{color:var(--forest);}
+  .stat-card.negative .val{color:var(--rust);}
+
+  .cat-bar-row{display:flex; align-items:center; gap:10px; margin-bottom:10px; font-size:0.85rem;}
+  .cat-bar-row .name{width:110px; flex-shrink:0; font-weight:600;}
+  .cat-bar-track{flex:1; background:rgba(27,42,61,0.08); border-radius:20px; height:10px; overflow:hidden;}
+  .cat-bar-fill{height:100%; border-radius:20px;}
+  .cat-bar-amt{width:90px; text-align:right; font-family:'JetBrains Mono',monospace; flex-shrink:0;}
+
+  .forecast-box{
+    background:var(--ink); color:var(--white); border-radius:8px; padding:20px 22px;
+    margin-top:6px;
+  }
+  .forecast-box h3{font-family:'Fraunces',serif; font-style:italic; font-weight:600; margin:0 0 14px; font-size:1.05rem;}
+  .risk-meter{
+    height:8px; border-radius:6px; background:rgba(255,255,255,0.15); overflow:hidden; margin:8px 0 6px;
+  }
+  .risk-fill{height:100%; border-radius:6px; transition:width .3s ease;}
+  .forecast-line{display:flex; justify-content:space-between; font-size:0.85rem; margin:6px 0; color:#dfe4ea;}
+  .forecast-line b{color:var(--white); font-family:'JetBrains Mono',monospace;}
+  .footnote{font-size:0.72rem; color:#a8b1bf; margin-top:10px; line-height:1.5;}
+
+  .top-actions{display:flex; justify-content:flex-end; gap:10px; margin-bottom:14px;}
+  .status-msg{font-size:0.78rem; color:var(--forest); font-weight:600; height:16px;}
+
+  .calendar-wrap{margin:16px 0 22px;}
+  .calendar-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;}
+  .calendar-head .filter-note{font-size:0.78rem; color:var(--ink-soft);}
+  .calendar-head button.clear-filter{
+    background:none; border:1px solid rgba(27,42,61,0.25); border-radius:5px;
+    padding:3px 10px; font-size:0.72rem; cursor:pointer; color:var(--ink);
+  }
+  .cal-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:4px;}
+  .cal-dow{text-align:center; font-size:0.65rem; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-soft); font-weight:700; padding-bottom:2px;}
+  .cal-day{
+    position:relative; aspect-ratio:1/1; border-radius:6px; background:rgba(255,255,255,0.5);
+    border:1px solid rgba(27,42,61,0.08); cursor:pointer; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; font-size:0.72rem; gap:2px; padding:2px;
+    transition:background .12s ease;
+  }
+  .cal-day:hover{background:rgba(47,110,79,0.14);}
+  .cal-day.has-spend{border-color:rgba(168,64,47,0.35);}
+  .cal-day .d-num{font-weight:700;}
+  .cal-day .d-amt{font-family:'JetBrains Mono',monospace; font-size:0.58rem; color:var(--rust); line-height:1;}
+  .cal-day.empty{visibility:hidden; cursor:default;}
+  .cal-day.selected{background:var(--forest); border-color:var(--forest);}
+  .cal-day.selected .d-num, .cal-day.selected .d-amt{color:var(--white);}
+  .cal-day.today-marker{outline:2px solid var(--gold); outline-offset:-2px;}
+
+  .edit-btn{
+    background:none; border:none; color:var(--ink-soft); cursor:pointer; font-size:0.9rem;
+    opacity:0.7; margin-right:8px;
+  }
+  .edit-btn:hover{opacity:1; color:var(--forest);}
+  .editing-note{
+    font-size:0.75rem; color:var(--gold); font-weight:600; margin-bottom:8px;
+    display:flex; align-items:center; gap:10px;
+  }
+  .editing-note button{
+    background:none; border:1px solid rgba(27,42,61,0.25); border-radius:5px;
+    padding:2px 8px; font-size:0.7rem; cursor:pointer; color:var(--ink);
+  }
+
+  @media (max-width:600px){
+    .ledger-inner{padding:22px 16px 26px 46px;}
+    .ledger-page::before{left:30px;}
+    .book-header h1{font-size:1.6rem;}
+    .cat-bar-row .name{width:80px; font-size:0.78rem;}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="book-header">
+    <div>
+      <h1>Khata</h1>
+      <div class="sub">your monthly money ledger</div>
+    </div>
+    <div class="month-nav">
+      <button id="prevMonth">‹</button>
+      <span id="monthLabel">July 2026</span>
+      <button id="nextMonth">›</button>
+    </div>
+  </div>
+
+  <div class="ledger-page">
+    <div class="ledger-inner">
+
+      <div class="top-actions">
+        <span class="status-msg" id="statusMsg"></span>
+        <button class="btn btn-ghost" id="resetBtn" style="font-size:0.75rem; padding:6px 12px;">Reset all data</button>
+      </div>
+
+      <!-- Income & savings goal -->
+      <span class="tag">Page 1 — Income</span>
+      <h2 class="section-title"><span class="num">01</span> What's coming in</h2>
+      <div class="row">
+        <div class="col">
+          <div class="field">
+            <label>Monthly income (home / salary)</label>
+            <input type="number" id="incomeInput" placeholder="e.g. 45000">
+          </div>
+        </div>
+        <div class="col">
+          <div class="field">
+            <label>Savings goal for the month</label>
+            <input type="number" id="savingsGoalInput" placeholder="e.g. 8000">
+          </div>
+        </div>
+        <div class="col" style="display:flex; align-items:flex-end;">
+          <button class="btn btn-forest btn-block" id="saveIncomeBtn">Save</button>
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <!-- Add expense -->
+      <span class="tag">Page 2 — Spending</span>
+      <h2 class="section-title"><span class="num">02</span> Log an expense</h2>
+      <div class="row">
+        <div class="col">
+          <div class="field">
+            <label>Date</label>
+            <input type="date" id="expDate">
+          </div>
+        </div>
+        <div class="col">
+          <div class="field">
+            <label>Category</label>
+            <select id="expCategory">
+              <option>Meals / Eating out</option>
+              <option>Party / Entertainment</option>
+              <option>Groceries</option>
+              <option>Rent / Bills</option>
+              <option>Transport</option>
+              <option>Shopping</option>
+              <option>Health</option>
+              <option>Other</option>
+            </select>
+          </div>
+        </div>
+        <div class="col">
+          <div class="field">
+            <label>Amount</label>
+            <input type="number" id="expAmount" placeholder="e.g. 350">
+          </div>
+        </div>
+        <div class="col">
+          <div class="field">
+            <label>Note (optional)</label>
+            <input type="text" id="expNote" placeholder="e.g. lunch with team">
+          </div>
+        </div>
+        <div class="col" style="display:flex; align-items:flex-end; max-width:140px;">
+          <button class="btn btn-rust btn-block" id="addExpenseBtn">+ Add</button>
+        </div>
+      </div>
+      <div id="editingNote" style="display:none;" class="editing-note">
+        <span>Editing an existing entry —</span>
+        <button id="cancelEditBtn">Cancel edit</button>
+      </div>
+
+      <div class="calendar-wrap">
+        <div class="calendar-head">
+          <span class="filter-note" id="calendarFilterNote">Tap a day to jump to it, or see just that day's spending below.</span>
+          <button class="clear-filter" id="clearDayFilter" style="display:none;">Show whole month</button>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+      </div>
+
+      <table style="margin-top:6px;">
+        <thead>
+          <tr><th>Date</th><th>Category</th><th>Note</th><th style="text-align:right;">Amount</th><th></th></tr>
+        </thead>
+        <tbody id="expenseTableBody"></tbody>
+      </table>
+
+      <hr class="divider">
+
+      <!-- Summary -->
+      <span class="tag">Page 3 — Summary</span>
+      <h2 class="section-title"><span class="num">03</span> Where you stand this month</h2>
+
+      <div class="stat-grid">
+        <div class="stat-card"><div class="lbl">Income</div><div class="val" id="statIncome">₹0</div></div>
+        <div class="stat-card negative"><div class="lbl">Spent so far</div><div class="val" id="statSpent">₹0</div></div>
+        <div class="stat-card positive"><div class="lbl">Left to spend / save</div><div class="val" id="statLeft">₹0</div></div>
+      </div>
+
+      <div id="categoryBars"></div>
+
+      <hr class="divider">
+
+      <!-- Forecast -->
+      <span class="tag">Page 4 — Forecast</span>
+      <h2 class="section-title"><span class="num">04</span> What the rest of the month looks like</h2>
+
+      <div class="forecast-box">
+        <h3 id="forecastHeadline">Add your income and a few expenses to see your forecast.</h3>
+        <div id="forecastBody"></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const CATEGORY_COLORS = {
+    'Meals / Eating out':'#a8402f',
+    'Party / Entertainment':'#b5904a',
+    'Groceries':'#2f6e4f',
+    'Rent / Bills':'#4a5a6d',
+    'Transport':'#7a5c9e',
+    'Shopping':'#c2185b',
+    'Health':'#0e7c86',
+    'Other':'#8d6e63'
+  };
+  const STORAGE_KEY = 'khata:data';
+  const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+
+  let today = new Date();
+  let viewYear = today.getFullYear();
+  let viewMonth = today.getMonth(); // 0-indexed
+
+  let data = { income: 0, savingsGoal: 0, expenses: [] }; // expenses: {id, date, category, amount, note}
+  let loaded = false;
+  let editingId = null;
+  let selectedDay = null; // 'YYYY-MM-DD' or null
+
+  function monthKey(y,m){ return y+'-'+String(m+1).padStart(2,'0'); }
+  function fmt(n){
+    n = Math.round(n||0);
+    return '₹' + n.toLocaleString('en-IN');
+  }
+  function showStatus(msg){
+    const el = document.getElementById('statusMsg');
+    el.textContent = msg;
+    setTimeout(()=>{ if(el.textContent===msg) el.textContent=''; }, 2000);
+  }
+
+  function loadData(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(raw){
+        data = JSON.parse(raw);
+        if(!data.expenses) data.expenses = [];
+      }
+    }catch(e){
+      // key doesn't exist yet or invalid JSON — fine, use defaults
+    }
+    loaded = true;
+    render();
+  }
+
+  function persist(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    }catch(e){
+      showStatus('Could not save — try again');
+    }
+  }
+
+
+  function currentMonthExpenses(){
+    const key = monthKey(viewYear, viewMonth);
+    return data.expenses.filter(e => e.date && e.date.startsWith(key));
+  }
+
+  function render(){
+    document.getElementById('monthLabel').textContent = MONTH_NAMES[viewMonth] + ' ' + viewYear;
+    document.getElementById('incomeInput').value = data.income || '';
+    document.getElementById('savingsGoalInput').value = data.savingsGoal || '';
+    if(!document.getElementById('expDate').value){
+      document.getElementById('expDate').value = today.toISOString().slice(0,10);
+    }
+
+    renderCalendar();
+    renderTable();
+    renderStats();
+    renderForecast();
+  }
+
+  function renderCalendar(){
+    const grid = document.getElementById('calGrid');
+    const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
+    const firstDow = new Date(viewYear, viewMonth, 1).getDay();
+    const exps = currentMonthExpenses();
+    const byDay = {};
+    exps.forEach(e => { byDay[e.date] = (byDay[e.date]||0) + Number(e.amount||0); });
+
+    const isCurrentMonth = (viewYear === today.getFullYear() && viewMonth === today.getMonth());
+    const todayStr = today.toISOString().slice(0,10);
+
+    let html = ['S','M','T','W','T','F','S'].map(d=>`<div class="cal-dow">${d}</div>`).join('');
+    for(let i=0;i<firstDow;i++){ html += '<div class="cal-day empty"></div>'; }
+    for(let d=1; d<=daysInMonth; d++){
+      const dateStr = viewYear+'-'+String(viewMonth+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+      const amt = byDay[dateStr];
+      const classes = ['cal-day'];
+      if(amt) classes.push('has-spend');
+      if(selectedDay === dateStr) classes.push('selected');
+      if(isCurrentMonth && dateStr === todayStr) classes.push('today-marker');
+      html += `<div class="${classes.join(' ')}" data-date="${dateStr}">
+        <div class="d-num">${d}</div>
+        ${amt ? `<div class="d-amt">${Math.round(amt)}</div>` : ''}
+      </div>`;
+    }
+    grid.innerHTML = html;
+
+    grid.querySelectorAll('.cal-day:not(.empty)').forEach(cell=>{
+      cell.addEventListener('click', ()=>{
+        const dateStr = cell.dataset.date;
+        selectedDay = (selectedDay === dateStr) ? null : dateStr;
+        document.getElementById('expDate').value = dateStr;
+        document.getElementById('clearDayFilter').style.display = selectedDay ? 'inline-block' : 'none';
+        document.getElementById('calendarFilterNote').textContent = selectedDay
+          ? `Showing entries for ${dateStr.slice(5)} only.`
+          : "Tap a day to jump to it, or see just that day's spending below.";
+        renderCalendar();
+        renderTable();
+      });
+    });
+  }
+
+  function renderTable(){
+    const body = document.getElementById('expenseTableBody');
+    let rows = currentMonthExpenses().slice();
+    if(selectedDay) rows = rows.filter(e => e.date === selectedDay);
+    rows.sort((a,b)=> b.date.localeCompare(a.date));
+    if(rows.length===0){
+      body.innerHTML = `<tr class="empty-row"><td colspan="5">${selectedDay ? 'No expenses logged for this day.' : 'No expenses logged for this month yet.'}</td></tr>`;
+      return;
+    }
+    body.innerHTML = rows.map(r => {
+      const color = CATEGORY_COLORS[r.category] || '#8d6e63';
+      return `<tr>
+        <td>${r.date.slice(5)}</td>
+        <td><span class="cat-pill" style="background:${color}22; color:${color};">${r.category}</span></td>
+        <td>${r.note ? r.note : '—'}</td>
+        <td class="amt">${fmt(r.amount)}</td>
+        <td style="white-space:nowrap;">
+          <button class="edit-btn" data-id="${r.id}" title="Edit">✎</button>
+          <button class="del-btn" data-id="${r.id}" title="Delete">✕</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    body.querySelectorAll('.del-btn').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        data.expenses = data.expenses.filter(e => e.id !== btn.dataset.id);
+        if(editingId === btn.dataset.id) exitEditMode();
+        persist();
+        render();
+      });
+    });
+
+    body.querySelectorAll('.edit-btn').forEach(btn=>{
+      btn.addEventListener('click', ()=> enterEditMode(btn.dataset.id));
+    });
+  }
+
+  function enterEditMode(id){
+    const exp = data.expenses.find(e => e.id === id);
+    if(!exp) return;
+    editingId = id;
+    document.getElementById('expDate').value = exp.date;
+    document.getElementById('expCategory').value = exp.category;
+    document.getElementById('expAmount').value = exp.amount;
+    document.getElementById('expNote').value = exp.note || '';
+    document.getElementById('addExpenseBtn').textContent = 'Update';
+    document.getElementById('editingNote').style.display = 'flex';
+    document.getElementById('addExpenseBtn').scrollIntoView({behavior:'smooth', block:'center'});
+  }
+
+  function exitEditMode(){
+    editingId = null;
+    document.getElementById('addExpenseBtn').textContent = '+ Add';
+    document.getElementById('editingNote').style.display = 'none';
+    document.getElementById('expAmount').value = '';
+    document.getElementById('expNote').value = '';
+  }
+
+  function renderStats(){
+    const exps = currentMonthExpenses();
+    const spent = exps.reduce((s,e)=> s + Number(e.amount||0), 0);
+    const income = Number(data.income||0);
+    const left = income - spent;
+
+    document.getElementById('statIncome').textContent = fmt(income);
+    document.getElementById('statSpent').textContent = fmt(spent);
+    document.getElementById('statLeft').textContent = fmt(left);
+    const leftCard = document.getElementById('statLeft').closest('.stat-card');
+    leftCard.classList.toggle('negative', left < 0);
+    leftCard.classList.toggle('positive', left >= 0);
+
+    // category bars
+    const byCat = {};
+    exps.forEach(e => { byCat[e.category] = (byCat[e.category]||0) + Number(e.amount||0); });
+    const maxVal = Math.max(1, ...Object.values(byCat));
+    const container = document.getElementById('categoryBars');
+    const cats = Object.keys(byCat).sort((a,b)=> byCat[b]-byCat[a]);
+    if(cats.length===0){
+      container.innerHTML = '<div style="color:var(--ink-soft); font-size:0.85rem; font-style:italic;">No spending logged yet this month.</div>';
+      return;
+    }
+    container.innerHTML = cats.map(cat=>{
+      const color = CATEGORY_COLORS[cat] || '#8d6e63';
+      const pct = Math.round((byCat[cat]/maxVal)*100);
+      return `<div class="cat-bar-row">
+        <div class="name">${cat}</div>
+        <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${pct}%; background:${color};"></div></div>
+        <div class="cat-bar-amt">${fmt(byCat[cat])}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderForecast(){
+    const headline = document.getElementById('forecastHeadline');
+    const body = document.getElementById('forecastBody');
+    const income = Number(data.income||0);
+    const savingsGoal = Number(data.savingsGoal||0);
+
+    if(income <= 0){
+      headline.textContent = 'Add your monthly income above to unlock your forecast.';
+      body.innerHTML = '';
+      return;
+    }
+
+    const isCurrentMonth = (viewYear === today.getFullYear() && viewMonth === today.getMonth());
+    const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
+    const dayOfMonth = isCurrentMonth ? today.getDate() : daysInMonth;
+    const daysElapsed = Math.max(1, dayOfMonth);
+    const daysRemaining = Math.max(0, daysInMonth - dayOfMonth);
+
+    const exps = currentMonthExpenses();
+    const spentSoFar = exps.reduce((s,e)=> s + Number(e.amount||0), 0);
+
+    const allowedSpend = income - savingsGoal; // what you can spend total and still hit your savings goal
+    const dailyPaceSoFar = spentSoFar / daysElapsed;
+    const projectedMonthEnd = isCurrentMonth ? dailyPaceSoFar * daysInMonth : spentSoFar;
+    const remainingAllowance = Math.max(0, allowedSpend - spentSoFar);
+    const dailyBudgetRemaining = daysRemaining > 0 ? remainingAllowance / daysRemaining : remainingAllowance;
+
+    // discretionary categories (meals + party) get a specific daily suggestion
+    const discCategories = ['Meals / Eating out','Party / Entertainment'];
+    const discSpentSoFar = exps.filter(e=>discCategories.includes(e.category)).reduce((s,e)=>s+Number(e.amount||0),0);
+    // rough rule of thumb: discretionary gets ~40% of the remaining daily allowance, rest covers groceries/transport/other
+    const dailyDiscretionary = dailyBudgetRemaining * 0.4;
+
+    // overspend risk: compare projected month-end spend to what's allowed
+    let riskPct = 0;
+    if(allowedSpend > 0){
+      riskPct = ((projectedMonthEnd - allowedSpend) / allowedSpend) * 100;
+    } else {
+      riskPct = 100;
+    }
+    riskPct = Math.max(0, Math.min(100, riskPct + 15)); // small buffer so "on pace" still shows some bar
+    let riskLabel, riskColor;
+    if(projectedMonthEnd <= allowedSpend * 0.9){ riskLabel = 'Low — you\'re on track'; riskColor = 'var(--forest)'; riskPct = Math.min(riskPct, 35); }
+    else if(projectedMonthEnd <= allowedSpend){ riskLabel = 'Moderate — keep an eye on it'; riskColor = 'var(--gold)'; riskPct = Math.max(35, Math.min(riskPct, 65)); }
+    else { riskLabel = 'High — you\'re on pace to overspend'; riskColor = 'var(--rust)'; riskPct = Math.max(65, riskPct); }
+
+    if(isCurrentMonth){
+      headline.textContent = daysRemaining > 0
+        ? `${daysRemaining} day${daysRemaining===1?'':'s'} left this month`
+        : 'Last day of the month';
+    } else {
+      headline.textContent = 'Month summary (past month)';
+    }
+
+    let html = '';
+    if(isCurrentMonth){
+      html += `<div class="risk-meter"><div class="risk-fill" style="width:${riskPct}%; background:${riskColor};"></div></div>
+      <div class="forecast-line"><span>Overspend risk</span><b style="color:${riskColor}">${riskLabel}</b></div>
+      <div class="forecast-line"><span>Projected total spend by month-end</span><b>${fmt(projectedMonthEnd)}</b></div>
+      <div class="forecast-line"><span>Budget to hit your ${fmt(savingsGoal)} savings goal</span><b>${fmt(allowedSpend)}</b></div>
+      <div class="forecast-line"><span>Suggested daily spend (all categories), remaining days</span><b>${fmt(dailyBudgetRemaining)}</b></div>
+      <div class="forecast-line"><span>— of which, meals + party per day</span><b>${fmt(dailyDiscretionary)}</b></div>
+      <div class="footnote">Projection is based on your average daily spend so far this month (${fmt(dailyPaceSoFar)}/day). Meals + party is suggested at roughly 40% of your remaining daily budget — the rest covers groceries, transport and other essentials. Adjust as your month actually goes.</div>`;
+    } else {
+      const netSaved = income - spentSoFar;
+      html += `<div class="forecast-line"><span>Total spent</span><b>${fmt(spentSoFar)}</b></div>
+      <div class="forecast-line"><span>Actual savings</span><b style="color:${netSaved>=savingsGoal?'var(--forest)':'var(--rust)'}">${fmt(netSaved)}</b></div>
+      <div class="forecast-line"><span>Savings goal was</span><b>${fmt(savingsGoal)}</b></div>`;
+    }
+    body.innerHTML = html;
+  }
+
+  // --- events ---
+  document.getElementById('saveIncomeBtn').addEventListener('click', async ()=>{
+    data.income = Number(document.getElementById('incomeInput').value)||0;
+    data.savingsGoal = Number(document.getElementById('savingsGoalInput').value)||0;
+    persist();
+    render();
+    showStatus('Saved');
+  });
+
+  document.getElementById('addExpenseBtn').addEventListener('click', async ()=>{
+    const date = document.getElementById('expDate').value;
+    const category = document.getElementById('expCategory').value;
+    const amount = Number(document.getElementById('expAmount').value);
+    const note = document.getElementById('expNote').value.trim();
+    if(!date || !amount || amount<=0){
+      showStatus('Enter a date and amount');
+      return;
+    }
+    if(editingId){
+      const exp = data.expenses.find(e => e.id === editingId);
+      if(exp){ exp.date = date; exp.category = category; exp.amount = amount; exp.note = note; }
+      exitEditMode();
+      persist();
+      const [y,m] = date.split('-').map(Number);
+      viewYear = y; viewMonth = m-1;
+      render();
+      showStatus('Updated');
+      return;
+    }
+    data.expenses.push({ id: Date.now().toString(36)+Math.random().toString(36).slice(2,6), date, category, amount, note });
+    persist();
+    document.getElementById('expAmount').value = '';
+    document.getElementById('expNote').value = '';
+    // jump view to the month the expense was added in
+    const [y,m] = date.split('-').map(Number);
+    viewYear = y; viewMonth = m-1;
+    render();
+    showStatus('Added');
+  });
+
+  document.getElementById('cancelEditBtn').addEventListener('click', ()=>{
+    exitEditMode();
+    render();
+  });
+
+  document.getElementById('prevMonth').addEventListener('click', ()=>{
+    viewMonth--; if(viewMonth<0){ viewMonth=11; viewYear--; }
+    selectedDay = null;
+    document.getElementById('clearDayFilter').style.display = 'none';
+    render();
+  });
+  document.getElementById('nextMonth').addEventListener('click', ()=>{
+    viewMonth++; if(viewMonth>11){ viewMonth=0; viewYear++; }
+    selectedDay = null;
+    document.getElementById('clearDayFilter').style.display = 'none';
+    render();
+  });
+  document.getElementById('clearDayFilter').addEventListener('click', ()=>{
+    selectedDay = null;
+    document.getElementById('clearDayFilter').style.display = 'none';
+    document.getElementById('calendarFilterNote').textContent = "Tap a day to jump to it, or see just that day's spending below.";
+    render();
+  });
+
+  document.getElementById('resetBtn').addEventListener('click', async ()=>{
+    if(!confirm('This clears all saved income and expense data. Continue?')) return;
+    data = { income:0, savingsGoal:0, expenses:[] };
+    persist();
+    render();
+    showStatus('Reset done');
+  });
+
+  loadData();
+})();
+</script>
+</body>
+</html>
