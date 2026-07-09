@@ -751,7 +751,7 @@ tr.empty-row td{
 
 <script>
 const firebaseConfig = {
-  apiKey: "AIzaSyC-Jp_xqvG0y6paUFsi2US5qAGalpJUvQ",
+  apiKey: "AIzaSyC-Jp_xqvG0y6paUFsi2US5qAGalpJU_vQ",
   authDomain: "expenscalc07.firebaseapp.com",
   projectId: "expenscalc07",
   storageBucket: "expenscalc07.firebasestorage.app",
@@ -1142,13 +1142,14 @@ const db = firebase.firestore();
   }
 
   async function onLogin(){
-    try{
-      const provider = new firebase.auth.GoogleAuthProvider();
-      await auth.signInWithPopup(provider);
-    }catch(e){
-      showStatus('Login failed');
-    }
+  try{
+    const provider = new firebase.auth.GoogleAuthProvider();
+    await auth.signInWithPopup(provider);
+  }catch(e){
+    alert(e.code + " - " + e.message);
+    showStatus('Login failed');
   }
+}
 
   async function onLogout(){
     await auth.signOut();
