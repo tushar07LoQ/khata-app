@@ -210,12 +210,22 @@
     .book-header h1{font-size:1.6rem;}
     .cat-bar-row .name{width:80px; font-size:0.78rem;}
   }
+  #signInView{display:none;}
+  #appView{display:block;}
 </style>
 </head>
 <body>
 <div class="wrap">
+  <section id="signInView" style="display:flex;justify-content:center;align-items:center;min-height:60vh;flex-direction:column;gap:16px;">
+    <div style="max-width:420px;text-align:center;background:var(--paper);padding:24px;border-radius:12px;box-shadow:var(--shadow);">
+      <h2 style="margin:0 0 8px;">Private Expense Ledger</h2>
+      <p style="margin:0 0 16px;">Sign in to keep your expenses private and synced on your own devices.</p>
+      <button id="googleBtn" style="padding:12px 18px;border-radius:999px;background:#1a73e8;color:#fff;border:none;font-weight:600;">Sign in with Google</button>
+    </div>
+  </section>
+  <section id="appView" style="display:none;">
 
-  <div class="book-header">
+  <div class="book-header"><div><div id="userBadge" style="font-weight:700;"></div><div id="userMeta" style="font-size:.85rem;color:var(--ink-soft);"></div></div><div id="syncState" style="font-size:.85rem;color:var(--forest);"></div><button id="logoutBtn" style="padding:8px 12px;border-radius:999px;border:1px solid var(--paper-line);background:transparent;">Logout</button></div><div class="book-header"
     <div>
       <h1>Khata</h1>
       <div class="sub">your monthly money ledger</div>
@@ -348,6 +358,9 @@
   </div>
 </div>
 
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 <script>
 (function(){
   const CATEGORY_COLORS = {
@@ -360,351 +373,142 @@
     'Health':'#0e7c86',
     'Other':'#8d6e63'
   };
-  const STORAGE_KEY = 'khata:data';
   const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const APP_PATH = 'khataLedger';
+  const USER_DOC_PREFIX = 'users';
+  const LOCAL_CACHE_KEY = 'khata:private-cache';
+  const firebaseConfig = {
+    apiKey: 'AIzaSyC-Jp_xqvG0y6paUFsi2US5qAGalpJU_vQ',
+    authDomain: 'expenscalc07.firebaseapp.com',
+    projectId: 'expenscalc07',
+    storageBucket: 'expenscalc07.firebasestorage.app',
+    messagingSenderId: '464318887293',
+    appId: '1:464318887293:web:61d7b52ba2adb7e362c814'
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
 
   let today = new Date();
   let viewYear = today.getFullYear();
-  let viewMonth = today.getMonth(); // 0-indexed
-
-  let data = { income: 0, savingsGoal: 0, expenses: [] }; // expenses: {id, date, category, amount, note}
+  let viewMonth = today.getMonth();
+  let data = { income: 0, savingsGoal: 0, expenses: [] };
   let loaded = false;
   let editingId = null;
-  let selectedDay = null; // 'YYYY-MM-DD' or null
+  let selectedDay = null;
+  let currentUser = null;
+  let syncTimer = null;
 
   function monthKey(y,m){ return y+'-'+String(m+1).padStart(2,'0'); }
-  function fmt(n){
-    n = Math.round(n||0);
-    return '₹' + n.toLocaleString('en-IN');
-  }
+  function fmt(n){ return '₹' + Math.round(n||0).toLocaleString('en-IN'); }
   function showStatus(msg){
     const el = document.getElementById('statusMsg');
     el.textContent = msg;
-    setTimeout(()=>{ if(el.textContent===msg) el.textContent=''; }, 2000);
+    clearTimeout(showStatus._t);
+    showStatus._t = setTimeout(()=>{ if(el.textContent===msg) el.textContent=''; }, 2000);
   }
-
-  function loadData(){
-    try{
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if(raw){
-        data = JSON.parse(raw);
-        if(!data.expenses) data.expenses = [];
+  function userDocRef(){ return db.collection(USER_DOC_PREFIX).doc(currentUser.uid); }
+  function safeLocalSave(){ try{ localStorage.setItem(LOCAL_CACHE_KEY, JSON.stringify(data)); }catch(e){} }
+  function safeLocalLoad(){ try{ const raw=localStorage.getItem(LOCAL_CACHE_KEY); if(raw){ const parsed=JSON.parse(raw); if(parsed && typeof parsed==='object'){ data = { income:Number(parsed.income||0), savingsGoal:Number(parsed.savingsGoal||0), expenses:Array.isArray(parsed.expenses)?parsed.expenses:[] }; } } }catch(e){} }
+  function syncUI(){
+    document.getElementById('signInView').style.display = currentUser ? 'none' : 'flex';
+    document.getElementById('appView').style.display = currentUser ? 'block' : 'none';
+    document.getElementById('userBadge').textContent = currentUser ? (currentUser.displayName || currentUser.email || 'Signed in') : '';
+    document.getElementById('userMeta').textContent = currentUser ? (currentUser.email || '') : '';
+  }
+  function saveRemote(){
+    if(!currentUser) return;
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(async ()=>{
+      safeLocalSave();
+      document.getElementById('syncState').textContent = 'Syncing...';
+      try{
+        await userDocRef().set({
+          income:Number(data.income||0),
+          savingsGoal:Number(data.savingsGoal||0),
+          expenses:data.expenses || [],
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          email: currentUser.email || '',
+          name: currentUser.displayName || ''
+        }, { merge: true });
+        document.getElementById('syncState').textContent = 'Saved';
+      }catch(e){
+        document.getElementById('syncState').textContent = 'Offline saved';
       }
+    }, 300);
+  }
+  async function loadRemote(){
+    safeLocalLoad();
+    render();
+    if(!currentUser) return;
+    document.getElementById('syncState').textContent = 'Loading...';
+    try{
+      const snap = await userDocRef().get();
+      if(snap.exists){
+        const remote = snap.data() || {};
+        data = { income:Number(remote.income||0), savingsGoal:Number(remote.savingsGoal||0), expenses:Array.isArray(remote.expenses)?remote.expenses:[] };
+      }else{
+        await userDocRef().set({
+          income: Number(data.income||0),
+          savingsGoal: Number(data.savingsGoal||0),
+          expenses: data.expenses || [],
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }
+      safeLocalSave();
+      document.getElementById('syncState').textContent = 'Synced';
     }catch(e){
-      // key doesn't exist yet or invalid JSON — fine, use defaults
+      document.getElementById('syncState').textContent = 'Offline';
     }
     loaded = true;
     render();
   }
-
-  function persist(){
-    try{
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    }catch(e){
-      showStatus('Could not save — try again');
-    }
-  }
-
-
-  function currentMonthExpenses(){
-    const key = monthKey(viewYear, viewMonth);
-    return data.expenses.filter(e => e.date && e.date.startsWith(key));
-  }
-
   function render(){
     document.getElementById('monthLabel').textContent = MONTH_NAMES[viewMonth] + ' ' + viewYear;
     document.getElementById('incomeInput').value = data.income || '';
     document.getElementById('savingsGoalInput').value = data.savingsGoal || '';
-    if(!document.getElementById('expDate').value){
-      document.getElementById('expDate').value = today.toISOString().slice(0,10);
-    }
-
-    renderCalendar();
-    renderTable();
-    renderStats();
-    renderForecast();
+    if(!document.getElementById('expDate').value) document.getElementById('expDate').value = today.toISOString().slice(0,10);
+    renderCalendar(); renderTable(); renderStats(); renderForecast();
   }
-
+  function currentMonthExpenses(){ const key = monthKey(viewYear, viewMonth); return data.expenses.filter(e => e.date && e.date.startsWith(key)); }
   function renderCalendar(){
     const grid = document.getElementById('calGrid');
     const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
     const firstDow = new Date(viewYear, viewMonth, 1).getDay();
     const exps = currentMonthExpenses();
-    const byDay = {};
-    exps.forEach(e => { byDay[e.date] = (byDay[e.date]||0) + Number(e.amount||0); });
-
+    const byDay = {}; exps.forEach(e => { byDay[e.date] = (byDay[e.date]||0) + Number(e.amount||0); });
     const isCurrentMonth = (viewYear === today.getFullYear() && viewMonth === today.getMonth());
     const todayStr = today.toISOString().slice(0,10);
-
     let html = ['S','M','T','W','T','F','S'].map(d=>`<div class="cal-dow">${d}</div>`).join('');
-    for(let i=0;i<firstDow;i++){ html += '<div class="cal-day empty"></div>'; }
+    for(let i=0;i<firstDow;i++) html += '<div class="cal-day empty"></div>';
     for(let d=1; d<=daysInMonth; d++){
       const dateStr = viewYear+'-'+String(viewMonth+1).padStart(2,'0')+'-'+String(d).padStart(2,'0');
       const amt = byDay[dateStr];
-      const classes = ['cal-day'];
-      if(amt) classes.push('has-spend');
-      if(selectedDay === dateStr) classes.push('selected');
-      if(isCurrentMonth && dateStr === todayStr) classes.push('today-marker');
-      html += `<div class="${classes.join(' ')}" data-date="${dateStr}">
-        <div class="d-num">${d}</div>
-        ${amt ? `<div class="d-amt">${Math.round(amt)}</div>` : ''}
-      </div>`;
+      const classes = ['cal-day']; if(amt) classes.push('has-spend'); if(selectedDay === dateStr) classes.push('selected'); if(isCurrentMonth && dateStr === todayStr) classes.push('today-marker');
+      html += `<div class="${classes.join(' ')}" data-date="${dateStr}"><div class="d-num">${d}</div>${amt ? `<div class="d-amt">${Math.round(amt)}</div>` : ''}</div>`;
     }
     grid.innerHTML = html;
-
-    grid.querySelectorAll('.cal-day:not(.empty)').forEach(cell=>{
-      cell.addEventListener('click', ()=>{
-        const dateStr = cell.dataset.date;
-        selectedDay = (selectedDay === dateStr) ? null : dateStr;
-        document.getElementById('expDate').value = dateStr;
-        document.getElementById('clearDayFilter').style.display = selectedDay ? 'inline-block' : 'none';
-        document.getElementById('calendarFilterNote').textContent = selectedDay
-          ? `Showing entries for ${dateStr.slice(5)} only.`
-          : "Tap a day to jump to it, or see just that day's spending below.";
-        renderCalendar();
-        renderTable();
-      });
-    });
+    grid.querySelectorAll('.cal-day:not(.empty)').forEach(cell=>{ cell.addEventListener('click', ()=>{ const dateStr = cell.dataset.date; selectedDay = (selectedDay === dateStr) ? null : dateStr; document.getElementById('expDate').value = dateStr; document.getElementById('clearDayFilter').style.display = selectedDay ? 'inline-block' : 'none'; document.getElementById('calendarFilterNote').textContent = selectedDay ? `Showing entries for ${dateStr.slice(5)} only.` : "Tap a day to jump to it, or see just that day's spending below."; renderCalendar(); renderTable(); }); });
   }
-
   function renderTable(){
     const body = document.getElementById('expenseTableBody');
     let rows = currentMonthExpenses().slice();
     if(selectedDay) rows = rows.filter(e => e.date === selectedDay);
     rows.sort((a,b)=> b.date.localeCompare(a.date));
-    if(rows.length===0){
-      body.innerHTML = `<tr class="empty-row"><td colspan="5">${selectedDay ? 'No expenses logged for this day.' : 'No expenses logged for this month yet.'}</td></tr>`;
-      return;
-    }
-    body.innerHTML = rows.map(r => {
-      const color = CATEGORY_COLORS[r.category] || '#8d6e63';
-      return `<tr>
-        <td>${r.date.slice(5)}</td>
-        <td><span class="cat-pill" style="background:${color}22; color:${color};">${r.category}</span></td>
-        <td>${r.note ? r.note : '—'}</td>
-        <td class="amt">${fmt(r.amount)}</td>
-        <td style="white-space:nowrap;">
-          <button class="edit-btn" data-id="${r.id}" title="Edit">✎</button>
-          <button class="del-btn" data-id="${r.id}" title="Delete">✕</button>
-        </td>
-      </tr>`;
-    }).join('');
-
-    body.querySelectorAll('.del-btn').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
-        data.expenses = data.expenses.filter(e => e.id !== btn.dataset.id);
-        if(editingId === btn.dataset.id) exitEditMode();
-        persist();
-        render();
-      });
-    });
-
-    body.querySelectorAll('.edit-btn').forEach(btn=>{
-      btn.addEventListener('click', ()=> enterEditMode(btn.dataset.id));
-    });
+    if(rows.length===0){ body.innerHTML = `<tr class="empty-row"><td colspan="5">${selectedDay ? 'No expenses logged for this day.' : 'No expenses logged for this month yet.'}</td></tr>`; return; }
+    body.innerHTML = rows.map(r => { const color = CATEGORY_COLORS[r.category] || '#8d6e63'; return `<tr><td>${r.date.slice(5)}</td><td><span class="cat-pill" style="background:${color}22; color:${color};">${r.category}</span></td><td>${r.note ? r.note : '—'}</td><td class="amt">${fmt(r.amount)}</td><td style="white-space:nowrap;"><button class="edit-btn" data-id="${r.id}" title="Edit">✎</button><button class="del-btn" data-id="${r.id}" title="Delete">✕</button></td></tr>`; }).join('');
+    body.querySelectorAll('.del-btn').forEach(btn=>{ btn.addEventListener('click', ()=>{ data.expenses = data.expenses.filter(e => e.id !== btn.dataset.id); if(editingId === btn.dataset.id) exitEditMode(); saveRemote(); render(); }); });
+    body.querySelectorAll('.edit-btn').forEach(btn=> btn.addEventListener('click', ()=> enterEditMode(btn.dataset.id)));
   }
-
-  function enterEditMode(id){
-    const exp = data.expenses.find(e => e.id === id);
-    if(!exp) return;
-    editingId = id;
-    document.getElementById('expDate').value = exp.date;
-    document.getElementById('expCategory').value = exp.category;
-    document.getElementById('expAmount').value = exp.amount;
-    document.getElementById('expNote').value = exp.note || '';
-    document.getElementById('addExpenseBtn').textContent = 'Update';
-    document.getElementById('editingNote').style.display = 'flex';
-    document.getElementById('addExpenseBtn').scrollIntoView({behavior:'smooth', block:'center'});
-  }
-
-  function exitEditMode(){
-    editingId = null;
-    document.getElementById('addExpenseBtn').textContent = '+ Add';
-    document.getElementById('editingNote').style.display = 'none';
-    document.getElementById('expAmount').value = '';
-    document.getElementById('expNote').value = '';
-  }
-
-  function renderStats(){
-    const exps = currentMonthExpenses();
-    const spent = exps.reduce((s,e)=> s + Number(e.amount||0), 0);
-    const income = Number(data.income||0);
-    const left = income - spent;
-
-    document.getElementById('statIncome').textContent = fmt(income);
-    document.getElementById('statSpent').textContent = fmt(spent);
-    document.getElementById('statLeft').textContent = fmt(left);
-    const leftCard = document.getElementById('statLeft').closest('.stat-card');
-    leftCard.classList.toggle('negative', left < 0);
-    leftCard.classList.toggle('positive', left >= 0);
-
-    // category bars
-    const byCat = {};
-    exps.forEach(e => { byCat[e.category] = (byCat[e.category]||0) + Number(e.amount||0); });
-    const maxVal = Math.max(1, ...Object.values(byCat));
-    const container = document.getElementById('categoryBars');
-    const cats = Object.keys(byCat).sort((a,b)=> byCat[b]-byCat[a]);
-    if(cats.length===0){
-      container.innerHTML = '<div style="color:var(--ink-soft); font-size:0.85rem; font-style:italic;">No spending logged yet this month.</div>';
-      return;
-    }
-    container.innerHTML = cats.map(cat=>{
-      const color = CATEGORY_COLORS[cat] || '#8d6e63';
-      const pct = Math.round((byCat[cat]/maxVal)*100);
-      return `<div class="cat-bar-row">
-        <div class="name">${cat}</div>
-        <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${pct}%; background:${color};"></div></div>
-        <div class="cat-bar-amt">${fmt(byCat[cat])}</div>
-      </div>`;
-    }).join('');
-  }
-
-  function renderForecast(){
-    const headline = document.getElementById('forecastHeadline');
-    const body = document.getElementById('forecastBody');
-    const income = Number(data.income||0);
-    const savingsGoal = Number(data.savingsGoal||0);
-
-    if(income <= 0){
-      headline.textContent = 'Add your monthly income above to unlock your forecast.';
-      body.innerHTML = '';
-      return;
-    }
-
-    const isCurrentMonth = (viewYear === today.getFullYear() && viewMonth === today.getMonth());
-    const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate();
-    const dayOfMonth = isCurrentMonth ? today.getDate() : daysInMonth;
-    const daysElapsed = Math.max(1, dayOfMonth);
-    const daysRemaining = Math.max(0, daysInMonth - dayOfMonth);
-
-    const exps = currentMonthExpenses();
-    const spentSoFar = exps.reduce((s,e)=> s + Number(e.amount||0), 0);
-
-    const allowedSpend = income - savingsGoal; // what you can spend total and still hit your savings goal
-    const dailyPaceSoFar = spentSoFar / daysElapsed;
-    const projectedMonthEnd = isCurrentMonth ? dailyPaceSoFar * daysInMonth : spentSoFar;
-    const remainingAllowance = Math.max(0, allowedSpend - spentSoFar);
-    const dailyBudgetRemaining = daysRemaining > 0 ? remainingAllowance / daysRemaining : remainingAllowance;
-
-    // discretionary categories (meals + party) get a specific daily suggestion
-    const discCategories = ['Meals / Eating out','Party / Entertainment'];
-    const discSpentSoFar = exps.filter(e=>discCategories.includes(e.category)).reduce((s,e)=>s+Number(e.amount||0),0);
-    // rough rule of thumb: discretionary gets ~40% of the remaining daily allowance, rest covers groceries/transport/other
-    const dailyDiscretionary = dailyBudgetRemaining * 0.4;
-
-    // overspend risk: compare projected month-end spend to what's allowed
-    let riskPct = 0;
-    if(allowedSpend > 0){
-      riskPct = ((projectedMonthEnd - allowedSpend) / allowedSpend) * 100;
-    } else {
-      riskPct = 100;
-    }
-    riskPct = Math.max(0, Math.min(100, riskPct + 15)); // small buffer so "on pace" still shows some bar
-    let riskLabel, riskColor;
-    if(projectedMonthEnd <= allowedSpend * 0.9){ riskLabel = 'Low — you\'re on track'; riskColor = 'var(--forest)'; riskPct = Math.min(riskPct, 35); }
-    else if(projectedMonthEnd <= allowedSpend){ riskLabel = 'Moderate — keep an eye on it'; riskColor = 'var(--gold)'; riskPct = Math.max(35, Math.min(riskPct, 65)); }
-    else { riskLabel = 'High — you\'re on pace to overspend'; riskColor = 'var(--rust)'; riskPct = Math.max(65, riskPct); }
-
-    if(isCurrentMonth){
-      headline.textContent = daysRemaining > 0
-        ? `${daysRemaining} day${daysRemaining===1?'':'s'} left this month`
-        : 'Last day of the month';
-    } else {
-      headline.textContent = 'Month summary (past month)';
-    }
-
-    let html = '';
-    if(isCurrentMonth){
-      html += `<div class="risk-meter"><div class="risk-fill" style="width:${riskPct}%; background:${riskColor};"></div></div>
-      <div class="forecast-line"><span>Overspend risk</span><b style="color:${riskColor}">${riskLabel}</b></div>
-      <div class="forecast-line"><span>Projected total spend by month-end</span><b>${fmt(projectedMonthEnd)}</b></div>
-      <div class="forecast-line"><span>Budget to hit your ${fmt(savingsGoal)} savings goal</span><b>${fmt(allowedSpend)}</b></div>
-      <div class="forecast-line"><span>Suggested daily spend (all categories), remaining days</span><b>${fmt(dailyBudgetRemaining)}</b></div>
-      <div class="forecast-line"><span>— of which, meals + party per day</span><b>${fmt(dailyDiscretionary)}</b></div>
-      <div class="footnote">Projection is based on your average daily spend so far this month (${fmt(dailyPaceSoFar)}/day). Meals + party is suggested at roughly 40% of your remaining daily budget — the rest covers groceries, transport and other essentials. Adjust as your month actually goes.</div>`;
-    } else {
-      const netSaved = income - spentSoFar;
-      html += `<div class="forecast-line"><span>Total spent</span><b>${fmt(spentSoFar)}</b></div>
-      <div class="forecast-line"><span>Actual savings</span><b style="color:${netSaved>=savingsGoal?'var(--forest)':'var(--rust)'}">${fmt(netSaved)}</b></div>
-      <div class="forecast-line"><span>Savings goal was</span><b>${fmt(savingsGoal)}</b></div>`;
-    }
-    body.innerHTML = html;
-  }
-
-  // --- events ---
-  document.getElementById('saveIncomeBtn').addEventListener('click', async ()=>{
-    data.income = Number(document.getElementById('incomeInput').value)||0;
-    data.savingsGoal = Number(document.getElementById('savingsGoalInput').value)||0;
-    persist();
-    render();
-    showStatus('Saved');
-  });
-
-  document.getElementById('addExpenseBtn').addEventListener('click', async ()=>{
-    const date = document.getElementById('expDate').value;
-    const category = document.getElementById('expCategory').value;
-    const amount = Number(document.getElementById('expAmount').value);
-    const note = document.getElementById('expNote').value.trim();
-    if(!date || !amount || amount<=0){
-      showStatus('Enter a date and amount');
-      return;
-    }
-    if(editingId){
-      const exp = data.expenses.find(e => e.id === editingId);
-      if(exp){ exp.date = date; exp.category = category; exp.amount = amount; exp.note = note; }
-      exitEditMode();
-      persist();
-      const [y,m] = date.split('-').map(Number);
-      viewYear = y; viewMonth = m-1;
-      render();
-      showStatus('Updated');
-      return;
-    }
-    data.expenses.push({ id: Date.now().toString(36)+Math.random().toString(36).slice(2,6), date, category, amount, note });
-    persist();
-    document.getElementById('expAmount').value = '';
-    document.getElementById('expNote').value = '';
-    // jump view to the month the expense was added in
-    const [y,m] = date.split('-').map(Number);
-    viewYear = y; viewMonth = m-1;
-    render();
-    showStatus('Added');
-  });
-
-  document.getElementById('cancelEditBtn').addEventListener('click', ()=>{
-    exitEditMode();
-    render();
-  });
-
-  document.getElementById('prevMonth').addEventListener('click', ()=>{
-    viewMonth--; if(viewMonth<0){ viewMonth=11; viewYear--; }
-    selectedDay = null;
-    document.getElementById('clearDayFilter').style.display = 'none';
-    render();
-  });
-  document.getElementById('nextMonth').addEventListener('click', ()=>{
-    viewMonth++; if(viewMonth>11){ viewMonth=0; viewYear++; }
-    selectedDay = null;
-    document.getElementById('clearDayFilter').style.display = 'none';
-    render();
-  });
-  document.getElementById('clearDayFilter').addEventListener('click', ()=>{
-    selectedDay = null;
-    document.getElementById('clearDayFilter').style.display = 'none';
-    document.getElementById('calendarFilterNote').textContent = "Tap a day to jump to it, or see just that day's spending below.";
-    render();
-  });
-
-  document.getElementById('resetBtn').addEventListener('click', async ()=>{
-    if(!confirm('This clears all saved income and expense data. Continue?')) return;
-    data = { income:0, savingsGoal:0, expenses:[] };
-    persist();
-    render();
-    showStatus('Reset done');
-  });
-
-  loadData();
+  function enterEditMode(id){ const exp = data.expenses.find(e => e.id === id); if(!exp) return; editingId = id; document.getElementById('expDate').value = exp.date; document.getElementById('expCategory').value = exp.category; document.getElementById('expAmount').value = exp.amount; document.getElementById('expNote').value = exp.note || ''; document.getElementById('addExpenseBtn').textContent = 'Update'; document.getElementById('editingNote').style.display = 'flex'; document.getElementById('addExpenseBtn').scrollIntoView({behavior:'smooth', block:'center'}); }
+  function exitEditMode(){ editingId = null; document.getElementById('addExpenseBtn').textContent = '+ Add'; document.getElementById('editingNote').style.display = 'none'; document.getElementById('expAmount').value = ''; document.getElementById('expNote').value = ''; }
+  function renderStats(){ const exps = currentMonthExpenses(); const spent = exps.reduce((s,e)=> s + Number(e.amount||0), 0); const income = Number(data.income||0); const left = income - spent; document.getElementById('statIncome').textContent = fmt(income); document.getElementById('statSpent').textContent = fmt(spent); document.getElementById('statLeft').textContent = fmt(left); document.getElementById('budgetFill').style.width = income ? Math.max(0, Math.min(100, (spent/income)*100)) + '%' : '0%'; }
+  function renderForecast(){ const exps = currentMonthExpenses(); const spent = exps.reduce((s,e)=> s + Number(e.amount||0), 0); const income = Number(data.income||0); const daysInMonth = new Date(viewYear, viewMonth+1, 0).getDate(); const todayDay = (viewYear === today.getFullYear() && viewMonth === today.getMonth()) ? today.getDate() : 1; const daysLeft = Math.max(1, daysInMonth - todayDay + 1); const daily = spent / Math.max(1, todayDay); const projected = Math.round(daily * daysInMonth); document.getElementById('forecastText').textContent = income ? `If you continue at this pace, you may end around ${fmt(projected)} spent this month.` : 'Enter your income and a few expenses to see a forecast.'; document.getElementById('forecastDays').textContent = String(daysLeft); }
+  async function onLogin(){ const provider = new firebase.auth.GoogleAuthProvider(); await auth.signInWithPopup(provider); }
+  async function onLogout(){ await auth.signOut(); }
+  auth.onAuthStateChanged(async (user)=>{ currentUser = user || null; syncUI(); if(currentUser) await loadRemote(); else { safeLocalLoad(); render(); } });
+  document.addEventListener('click', (e)=>{ if(e.target && e.target.id === 'googleBtn') onLogin(); if(e.target && e.target.id === 'logoutBtn') onLogout(); });
+  document.addEventListener('DOMContentLoaded', ()=>{ syncUI(); render(); document.getElementById('incomeInput').addEventListener('change', ()=>{ data.income = Number(document.getElementById('incomeInput').value)||0; saveRemote(); render(); }); document.getElementById('savingsGoalInput').addEventListener('change', ()=>{ data.savingsGoal = Number(document.getElementById('savingsGoalInput').value)||0; saveRemote(); render(); }); document.getElementById('addExpenseBtn').addEventListener('click', ()=>{ const date = document.getElementById('expDate').value; const category = document.getElementById('expCategory').value; const amount = Number(document.getElementById('expAmount').value||0); const note = document.getElementById('expNote').value.trim(); if(!date || !category || !amount) return showStatus('Fill date, category, and amount'); if(editingId){ const exp = data.expenses.find(e => e.id === editingId); if(exp){ exp.date = date; exp.category = category; exp.amount = amount; exp.note = note; } exitEditMode(); } else { data.expenses.push({ id: crypto.randomUUID().slice(2,10), date, category, amount, note }); } saveRemote(); document.getElementById('expAmount').value = ''; document.getElementById('expNote').value = ''; render(); }); document.getElementById('clearDayFilter').addEventListener('click', ()=>{ selectedDay = null; document.getElementById('clearDayFilter').style.display = 'none'; document.getElementById('calendarFilterNote').textContent = "Tap a day to jump to it, or see just that day's spending below."; renderCalendar(); renderTable(); }); document.getElementById('resetBtn').addEventListener('click', ()=>{ if(!confirm('Reset all data from this account?')) return; data = { income:0, savingsGoal:0, expenses:[] }; saveRemote(); render(); }); document.getElementById('prevMonth').addEventListener('click', ()=>{ if(viewMonth===0){ viewMonth=11; viewYear--; } else viewMonth--; render(); }); document.getElementById('nextMonth').addEventListener('click', ()=>{ if(viewMonth===11){ viewMonth=0; viewYear++; } else viewMonth++; render(); }); });
 })();
 </script>
-</body>
-</html>
