@@ -124,16 +124,27 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
 <script>
+const firebaseConfig = {
+  apiKey: "AIzaSyC-Jp_xqvG0y6paUFsi2US5qAGalpJU_vQ",
+  authDomain: "expenscalc07.firebaseapp.com",
+  projectId: "expenscalc07",
+  storageBucket: "expenscalc07.firebasestorage.app",
+  messagingSenderId: "464318887293",
+  appId: "1:464318887293:web:61d7b52ba2adb7e362c814"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+</script>
+
 (function(){
   const CATEGORY_COLORS = {'Meals / Eating out':'#a8402f','Party / Entertainment':'#b5904a','Groceries':'#2f6e4f','Rent / Bills':'#4a5a6d','Transport':'#7a5c9e','Shopping':'#c2185b','Health':'#0e7c86','Other':'#8d6e63'};
   const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const LOCAL_CACHE_KEY = 'khata:private-cache';
-  const firebaseConfig = {apiKey:'AIzaSyC-Jp_xqvG0y6paUFsi2US5qAGalpJU_vQ',authDomain:'expenscalc07.firebaseapp.com',projectId:'expenscalc07',storageBucket:'expenscalc07.firebasestorage.app',messagingSenderId:'464318887293',appId:'1:464318887293:web:61d7b52ba2adb7e362c814'};
-  firebase.initializeApp(firebaseConfig);
-  const auth = firebase.auth();
-  const db = firebase.firestore();
-
+  
   let today = new Date(), viewYear = today.getFullYear(), viewMonth = today.getMonth();
   let data = { income: 0, savingsGoal: 0, expenses: [] };
   let editingId = null, selectedDay = null, currentUser = null, syncTimer = null;
